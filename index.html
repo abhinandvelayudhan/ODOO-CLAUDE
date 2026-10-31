@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>INTRINSIC — Subscription &amp; Invoicing</title>
+<script>
+  document.documentElement.classList.toggle('dark',
+    localStorage.theme ? localStorage.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config = { darkMode: 'class' }</script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<style type="text/tailwindcss">
+  @layer components {
+    .card { @apply rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 }
+    .input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-500 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/30 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:placeholder-slate-400 }
+    .btn-primary { @apply inline-flex min-h-[44px] items-center justify-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-50 dark:bg-teal-400 dark:text-slate-950 dark:hover:bg-teal-300 }
+    .btn-ghost { @apply inline-flex min-h-[44px] items-center justify-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-800 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800 }
+    .th { @apply px-3 py-2 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 }
+    .td { @apply whitespace-nowrap px-3 py-3 text-sm }
+    .muted { @apply text-slate-600 dark:text-slate-400 }
+  }
+  [x-cloak] { display: none !important }
+</style>
+</head>
+<body x-data="app()" x-init="init()" x-cloak
+      class="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+
+<!-- notification banner (auth + dashboard) -->
+<div x-show="toast.msg" x-transition.opacity role="alert"
+     class="fixed inset-x-0 top-0 z-50 flex items-center justify-between gap-4 px-4 py-3 text-sm font-medium shadow-lg"
+     :class="toast.type==='err' ? 'bg-red-700 text-white' : 'bg-emerald-700 text-white'">
+  <span x-text="toast.msg"></span>
+  <button class="rounded border border-white/50 px-3 py-1" @click="toast.msg=''">Dismiss</button>
+</div>
+
+<!-- ================= AUTH (shown first; dashboard is not rendered until signed in) ================= -->
+<template x-if="!user">
+<main class="min-h-screen w-full lg:grid lg:grid-cols-2">
+  <section class="hidden flex-col justify-between bg-teal-800 p-12 text-white dark:bg-slate-900 lg:flex">
+    <div class="text-2xl font-bold tracking-tight">INTRINSIC</div>
+    <div>
+      <h1 class="max-w-lg text-4xl font-bold leading-tight">Recurring revenue, run from one place.</h1>
+      <p class="mt-4 max-w-md text-teal-50/90 dark:text-slate-300">Subscriptions, discounts and invoices with a clear lifecycle from draft to close, and a billing engine that keeps up.</p>
+    </div>
+    <p class="text-sm text-teal-100/80 dark:text-slate-400">Odoo Makeathon submission</p>
+  </section>
+
+  <section class="flex min-h-screen flex-col px-5 py-5 sm:px-10">
+    <div class="flex items-center justify-between">
+      <span class="text-xl font-bold tracking-tight lg:invisible">INTRINSIC</span>
+      <button class="btn-ghost" @click="toggleTheme()" x-text="dark ? 'Bright mode' : 'Dark mode'"></button>
+    </div>
+
+    <div class="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-8">
+      <h2 class="text-2xl font-bold" x-text="mode==='login' ? 'Sign in to INTRINSIC' : 'Create your customer account'"></h2>
+      <p class="muted mt-1 text-sm">Customer accounts only. Staff and admin accounts are created by an administrator.</p>
+
+      <div class="mt-6 grid grid-cols-2 gap-1 rounded-lg bg-slate-200 p-1 dark:bg-slate-800">
+        <button class="min-h-[40px] rounded-md text-sm font-semibold" @click="mode='login'; fieldErr={}"
+                :class="mode==='login' ? 'bg-white shadow dark:bg-slate-950' : ''">Sign in</button>
+        <button class="min-h-[40px] rounded-md text-sm font-semibold" @click="mode='register'; fieldErr={}"
+                :class="mode==='register' ? 'bg-white shadow dark:bg-slate-950' : ''">Register</button>
+      </div>
+
+      <form class="mt-5 space-y-4" @submit.prevent="submit()" novalidate>
+        <div x-show="mode==='register'">
+          <label class="mb-1 block text-sm font-medium" for="rn">Full name</label>
+          <input id="rn" class="input" x-model="form.name" autocomplete="name">
+          <p class="mt-1 text-sm text-red-600 dark:text-red-400" x-text="fieldErr.name"></p>
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium" for="em">Email</label>
+          <input id="em" type="email" class="input" x-model="form.email" autocomplete="email">
+          <p class="mt-1 text-sm text-red-600 dark:text-red-400" x-text="fieldErr.email"></p>
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium" for="pw">Password</label>
+          <input id="pw" type="password" class="input" x-model="form.password"
+                 :autocomplete="mode==='login' ? 'current-password' : 'new-password'">
+          <p class="mt-1 text-sm text-red-600 dark:text-red-400" x-text="fieldErr.password"></p>
+          <ul x-show="mode==='register'" class="mt-2 space-y-1 text-sm">
+            <template x-for="r in pwRules(form.password)" :key="r.label">
+              <li :class="r.ok ? 'text-emerald-700 dark:text-emerald-400' : 'muted'"
+                  x-text="(r.ok ? 'Done: ' : 'Needed: ') + r.label"></li>
+            </template>
+          </ul>
+        </div>
+        <button class="btn-primary w-full" :disabled="loading" x-text="loading ? 'Please wait' : (mode==='login' ? 'Sign in' : 'Create account')"></button>
+      </form>
+
+      <div class="mt-8 border-t border-slate-200 pt-5 dark:border-slate-800">
+        <p class="text-sm font-semibold">Instant Persona Evaluation</p>
+        <p class="muted mb-3 text-sm">One tap sign-in for judges.</p>
+        <div class="grid grid-cols-3 gap-2">
+          <button class="btn-ghost px-2" @click="persona('admin')">Admin</button>
+          <button class="btn-ghost px-2" @click="persona('staff')">Staff</button>
+          <button class="btn-ghost px-2" @click="persona('customer')">Customer</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+</template>
+
+<!-- ================= DASHBOARD ================= -->
+<template x-if="user">
+<div class="min-h-screen w-full lg:flex">
+
+  <!-- mobile top bar -->
+  <header class="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 lg:hidden">
+    <span class="text-lg font-bold tracking-tight">INTRINSIC</span>
+    <div class="flex gap-2">
+      <button class="btn-ghost px-3" @click="toggleTheme()" x-text="dark ? 'Bright' : 'Dark'"></button>
+      <button class="btn-primary px-3" @click="menu=true">Menu</button>
+    </div>
+  </header>
+  <div x-show="menu" class="fixed inset-0 z-30 bg-black/50 lg:hidden" @click="menu=false"></div>
+
+  <!-- sidebar / drawer -->
+  <aside class="fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white p-4 transition-transform dark:border-slate-800 dark:bg-slate-900 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0"
+         :class="menu ? 'translate-x-0' : '-translate-x-full'">
+    <div class="flex items-center justify-between">
+      <span class="text-xl font-bold tracking-tight">INTRINSIC</span>
+      <button class="btn-ghost px-3 lg:hidden" @click="menu=false">Close</button>
+    </div>
+    <nav class="mt-6 flex flex-1 flex-col gap-1">
+      <template x-for="n in nav" :key="n[0]">
+        <button class="min-h-[44px] rounded-lg px-3 text-left text-sm font-semibold"
+                :class="tab===n[0] ? 'bg-teal-700 text-white dark:bg-teal-400 dark:text-slate-950' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                @click="tab=n[0]; menu=false" x-text="n[1]"></button>
+      </template>
+    </nav>
+    <div class="space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+      <p class="text-sm font-semibold" x-text="user.name"></p>
+      <p class="muted text-xs" x-text="user.role === 'Staff' ? 'Internal Staff' : user.role"></p>
+      <button class="btn-ghost hidden w-full lg:inline-flex" @click="toggleTheme()" x-text="dark ? 'Bright mode' : 'Dark mode'"></button>
+      <button class="btn-primary w-full" @click="logout()">Sign Out</button>
+    </div>
+  </aside>
+
+  <main class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+
+    <!-- OVERVIEW -->
+    <section x-show="tab==='overview'" class="space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold" x-text="user.role==='Customer' ? 'Your account' : 'Revenue overview'"></h1>
+          <p class="muted text-sm">Live figures from your subscriptions and invoices.</p>
+        </div>
+        <button x-show="user.role!=='Customer'" class="btn-primary" :disabled="loading" @click="runBilling()">Run Billing Cycle</button>
+      </div>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="card"><p class="muted text-sm">Monthly recurring revenue</p><p class="mt-2 text-3xl font-bold" x-text="fmt(kpis.mrr)"></p></div>
+        <div class="card"><p class="muted text-sm">Active subscriptions</p><p class="mt-2 text-3xl font-bold" x-text="kpis.active ?? 0"></p></div>
+        <div class="card"><p class="muted text-sm">Overdue invoices</p><p class="mt-2 text-3xl font-bold text-red-700 dark:text-red-400" x-text="kpis.overdue ?? 0"></p><p class="muted text-xs" x-text="fmt(kpis.overdue_amount) + ' outstanding'"></p></div>
+        <div class="card"><p class="muted text-sm">Total revenue settled</p><p class="mt-2 text-3xl font-bold" x-text="fmt(kpis.revenue)"></p></div>
+      </div>
+      <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div class="card xl:col-span-1">
+          <h2 class="font-semibold">Subscription lifecycle</h2>
+          <div class="mt-4 space-y-3">
+            <template x-for="st in statuses" :key="st">
+              <div>
+                <div class="flex justify-between text-sm"><span x-text="st"></span><span x-text="count(st)"></span></div>
+                <div class="mt-1 h-2 rounded bg-slate-200 dark:bg-slate-800"><div class="h-2 rounded bg-teal-700 dark:bg-teal-400" :style="'width:' + (subs.length ? count(st)/subs.length*100 : 0) + '%'"></div></div>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div class="card overflow-x-auto xl:col-span-2">
+          <h2 class="mb-2 font-semibold">Recent invoices</h2>
+          <table class="w-full min-w-[520px]">
+            <thead><tr><th class="th">Invoice</th><th class="th">Customer</th><th class="th">Amount</th><th class="th">Status</th></tr></thead>
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+              <template x-for="i in invoices.slice(0,6)" :key="i.id">
+                <tr><td class="td" x-text="i.number"></td><td class="td" x-text="i.customer"></td><td class="td" x-text="fmt(i.amount)"></td>
+                  <td class="td"><span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="badge(i.status)" x-text="i.status"></span></td></tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBSCRIPTIONS -->
+    <section x-show="tab==='subscriptions'" class="space-y-6">
+      <h1 class="text-2xl font-bold">Subscriptions</h1>
+      <form class="card grid grid-cols-1 items-end gap-3 md:grid-cols-2 xl:grid-cols-4" @submit.prevent="createSub()">
+        <div x-show="user.role!=='Customer'">
+          <label class="mb-1 block text-sm font-medium">Customer</label>
+          <select class="input" x-model="newSub.customer_id"><option value="">Select customer</option>
+            <template x-for="c in customers" :key="c.id"><option :value="c.id" x-text="c.name"></option></template></select>
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium">Plan</label>
+          <select class="input" x-model="newSub.plan_id"><option value="">Select plan</option>
+            <template x-for="p in plans" :key="p.id"><option :value="p.id" x-text="p.name + ' — ' + fmt(p.price) + '/' + (p.interval==='yearly'?'yr':'mo')"></option></template></select>
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium">Discount code (optional)</label>
+          <input class="input" x-model="newSub.code" placeholder="WELCOME10">
+        </div>
+        <button class="btn-primary" x-text="user.role==='Customer' ? 'Request subscription' : 'Create draft'"></button>
+      </form>
+      <div class="card overflow-x-auto">
+        <table class="w-full min-w-[820px]">
+          <thead><tr><th class="th">Customer</th><th class="th">Plan</th><th class="th">Price</th><th class="th">Discount</th><th class="th">Next billing</th><th class="th">Status</th><th class="th">Actions</th></tr></thead>
+          <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+            <template x-for="s in subs" :key="s.id">
+              <tr>
+                <td class="td" x-text="s.customer"></td><td class="td" x-text="s.plan"></td>
+                <td class="td" x-text="fmt(s.net_price) + '/' + (s.interval==='yearly'?'yr':'mo')"></td>
+                <td class="td" x-text="s.discount || 'None'"></td><td class="td" x-text="s.next_billing || 'Not scheduled'"></td>
+                <td class="td"><span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="badge(s.status)" x-text="s.status"></span></td>
+                <td class="td space-x-2">
+                  <button x-show="user.role!=='Customer' && FLOW[s.status].length" class="btn-primary !min-h-[36px] px-3" @click="move(s, FLOW[s.status][0])" x-text="'Move to ' + FLOW[s.status][0]"></button>
+                  <button x-show="s.status!=='Closed'" class="btn-ghost !min-h-[36px] px-3" @click="move(s,'Closed')" x-text="user.role==='Customer' ? 'Cancel' : 'Close'"></button>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="!subs.length"><td class="td muted" colspan="7">No subscriptions yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- INVOICES -->
+    <section x-show="tab==='invoices'" class="space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-2xl font-bold">Invoices</h1>
+        <button x-show="user.role!=='Customer'" class="btn-primary" :disabled="loading" @click="runBilling()">Run Billing Cycle</button>
+      </div>
+      <div class="card overflow-x-auto">
+        <table class="w-full min-w-[820px]">
+          <thead><tr><th class="th">Invoice</th><th class="th">Customer</th><th class="th">Plan</th><th class="th">Gross</th><th class="th">Discount</th><th class="th">Total</th><th class="th">Due</th><th class="th">Status</th><th class="th">Action</th></tr></thead>
+          <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+            <template x-for="i in invoices" :key="i.id">
+              <tr>
+                <td class="td" x-text="i.number"></td><td class="td" x-text="i.customer"></td><td class="td" x-text="i.plan"></td>
+                <td class="td" x-text="fmt(i.gross)"></td><td class="td" x-text="'-' + fmt(i.discount_amount)"></td>
+                <td class="td font-semibold" x-text="fmt(i.amount)"></td><td class="td" x-text="i.due_date"></td>
+                <td class="td"><span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="badge(i.status)" x-text="i.status"></span></td>
+                <td class="td"><button x-show="i.status!=='Paid'" class="btn-ghost !min-h-[36px] px-3" @click="pay(i)" x-text="user.role==='Customer' ? 'Pay now' : 'Mark paid'"></button></td>
+              </tr>
+            </template>
+            <tr x-show="!invoices.length"><td class="td muted" colspan="9">No invoices yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PLANS & DISCOUNTS -->
+    <section x-show="tab==='catalog'" class="space-y-6">
+      <h1 class="text-2xl font-bold">Plans &amp; discounts</h1>
+      <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div class="card space-y-4">
+          <h2 class="font-semibold">Plans</h2>
+          <div class="overflow-x-auto"><table class="w-full min-w-[360px]"><thead><tr><th class="th">Name</th><th class="th">Price</th><th class="th">Billing</th></tr></thead>
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800"><template x-for="p in plans" :key="p.id">
+              <tr><td class="td" x-text="p.name"></td><td class="td" x-text="fmt(p.price)"></td><td class="td" x-text="p.interval"></td></tr></template></tbody></table></div>
+          <form x-show="user.role==='Admin'" class="grid grid-cols-1 gap-2 sm:grid-cols-4" @submit.prevent="addPlan()">
+            <input class="input" placeholder="Plan name" x-model="newPlan.name">
+            <input class="input" type="number" step="0.01" placeholder="Price" x-model="newPlan.price">
+            <select class="input" x-model="newPlan.interval"><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
+            <button class="btn-primary">Add plan</button>
+          </form>
+        </div>
+        <div class="card space-y-4">
+          <h2 class="font-semibold">Discount rules</h2>
+          <div class="overflow-x-auto"><table class="w-full min-w-[360px]"><thead><tr><th class="th">Code</th><th class="th">Percent off</th><th class="th">State</th><th class="th"></th></tr></thead>
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800"><template x-for="d in discounts" :key="d.id">
+              <tr><td class="td font-semibold" x-text="d.code"></td><td class="td" x-text="d.percent + '%'"></td>
+                <td class="td" x-text="d.active ? 'Active' : 'Disabled'"></td>
+                <td class="td"><button x-show="user.role==='Admin'" class="btn-ghost !min-h-[36px] px-3" @click="toggleDisc(d)" x-text="d.active ? 'Disable' : 'Enable'"></button></td></tr></template></tbody></table></div>
+          <form x-show="user.role==='Admin'" class="grid grid-cols-1 gap-2 sm:grid-cols-3" @submit.prevent="addDisc()">
+            <input class="input" placeholder="CODE" x-model="newDisc.code">
+            <input class="input" type="number" step="0.1" placeholder="Percent" x-model="newDisc.percent">
+            <button class="btn-primary">Add discount</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- TEAM (Admin Management Portal) -->
+    <section x-show="tab==='team'" class="space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div><h1 class="text-2xl font-bold">Team &amp; access</h1><p class="muted text-sm">Create and assign internal staff or admin accounts.</p></div>
+        <button class="btn-primary" @click="staffOpen=true">Add team member</button>
+      </div>
+      <div class="card overflow-x-auto">
+        <table class="w-full min-w-[560px]">
+          <thead><tr><th class="th">Name</th><th class="th">Email</th><th class="th">Role</th><th class="th">Created</th></tr></thead>
+          <tbody class="divide-y divide-slate-200 dark:divide-slate-800"><template x-for="u in users" :key="u.id">
+            <tr><td class="td" x-text="u.name"></td><td class="td" x-text="u.email"></td>
+              <td class="td"><span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold dark:bg-slate-700" x-text="u.role==='Staff' ? 'Internal Staff' : u.role"></span></td>
+              <td class="td" x-text="u.created_at"></td></tr></template></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- add team member modal -->
+  <div x-show="staffOpen" class="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4" @keydown.escape.window="staffOpen=false">
+    <form class="max-h-full w-full max-w-md space-y-4 overflow-y-auto rounded-t-2xl bg-white p-5 dark:bg-slate-900 sm:rounded-2xl" @submit.prevent="addStaff()" novalidate>
+      <h2 class="text-lg font-bold">Add team member</h2>
+      <div><label class="mb-1 block text-sm font-medium">Full name</label><input class="input" x-model="staff.name"></div>
+      <div><label class="mb-1 block text-sm font-medium">Email</label><input class="input" type="email" x-model="staff.email"></div>
+      <div><label class="mb-1 block text-sm font-medium">Role</label>
+        <select class="input" x-model="staff.role"><option value="Staff">Internal Staff</option><option value="Admin">Admin</option></select></div>
+      <div><label class="mb-1 block text-sm font-medium">Temporary password</label>
+        <input class="input" type="password" autocomplete="new-password" x-model="staff.password">
+        <ul class="mt-2 space-y-1 text-sm"><template x-for="r in pwRules(staff.password)" :key="r.label">
+          <li :class="r.ok ? 'text-emerald-700 dark:text-emerald-400' : 'muted'" x-text="(r.ok ? 'Done: ' : 'Needed: ') + r.label"></li></template></ul></div>
+      <p class="text-sm text-red-600 dark:text-red-400" x-text="staffErr"></p>
+      <div class="flex justify-end gap-2"><button type="button" class="btn-ghost" @click="staffOpen=false">Cancel</button><button class="btn-primary">Create account</button></div>
+    </form>
+  </div>
+</div>
+</template>
+
+<script>
+function app() {
+  return {
+    FLOW: { Draft: ['Quotation'], Quotation: ['Confirmed'], Confirmed: ['Active'], Active: ['Closed'], Closed: [] },
+    statuses: ['Draft', 'Quotation', 'Confirmed', 'Active', 'Closed'],
+    user: null, token: localStorage.getItem('intrinsic_token'), tab: 'overview', menu: false, mode: 'login', loading: false,
+    dark: document.documentElement.classList.contains('dark'),
+    toast: { msg: '', type: 'ok' }, _t: null,
+    form: { name: '', email: '', password: '' }, fieldErr: {},
+    kpis: {}, subs: [], invoices: [], plans: [], discounts: [], users: [], customers: [],
+    newSub: { customer_id: '', plan_id: '', code: '' }, newPlan: { name: '', price: '', interval: 'monthly' }, newDisc: { code: '', percent: '' },
+    staff: { name: '', email: '', password: '', role: 'Staff' }, staffOpen: false, staffErr: '',
+
+    get nav() {
+      const n = [['overview', 'Overview'], ['subscriptions', 'Subscriptions'], ['invoices', 'Invoices']];
+      if (this.user.role !== 'Customer') n.push(['catalog', 'Plans & Discounts']);
+      if (this.user.role === 'Admin') n.push(['team', 'Team']);
+      return n;
+    },
+    async init() {
+      if (!this.token) return;
+      try { this.user = await this.api('/auth/me'); await this.loadAll(); } catch (e) { this.clear(); }
+    },
+    toggleTheme() {
+      this.dark = !this.dark;
+      document.documentElement.classList.toggle('dark', this.dark);
+      localStorage.theme = this.dark ? 'dark' : 'light';
+    },
+    notify(msg, type = 'ok') {
+      this.toast = { msg, type }; clearTimeout(this._t);
+      this._t = setTimeout(() => this.toast.msg = '', type === 'err' ? 7000 : 3500);
+    },
+    async api(path, opt = {}) {
+      let r;
+      try {
+        r = await fetch('/api' + path, {
+          method: opt.method || 'GET',
+          headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
+          body: opt.body ? JSON.stringify(opt.body) : undefined });
+      } catch (e) { throw new Error('Cannot reach the server. Check that INTRINSIC is running.'); }
+      let d = null; try { d = await r.json(); } catch (e) {}
+      if (!r.ok) {
+        if (r.status === 401 && this.user) { this.clear(); this.notify('Your session has expired. Please sign in again.', 'err'); }
+        throw new Error(d?.detail || 'Request failed (' + r.status + ').');
+      }
+      return d;
+    },
+    async run(fn) {
+      this.loading = true;
+      try { await fn(); } catch (e) { this.notify(e.message, 'err'); } finally { this.loading = false; }
+    },
+    pwRules(p) {
+      p = p || '';
+      return [
+        { label: 'More than 8 characters', ok: p.length > 8 },
+        { label: 'One uppercase letter', ok: /[A-Z]/.test(p) },
+        { label: 'One lowercase letter', ok: /[a-z]/.test(p) },
+        { label: 'One special character', ok: /[^A-Za-z0-9\s]/.test(p) }];
+    },
+    pwValid(p) { return this.pwRules(p).every(r => r.ok); },
+    async submit() {
+      const f = this.form, e = {};
+      if (this.mode === 'register' && f.name.trim().length < 2) e.name = 'Enter your full name.';
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) e.email = 'Enter a valid email address.';
+      if (this.mode === 'register' && !this.pwValid(f.password)) e.password = 'Password does not meet all the requirements below.';
+      if (this.mode === 'login' && !f.password) e.password = 'Enter your password.';
+      this.fieldErr = e;
+      if (Object.keys(e).length) return this.notify('Please fix the highlighted fields.', 'err');
+      await this.run(async () => this.start(await this.api(this.mode === 'login' ? '/auth/login' : '/auth/register', { method: 'POST', body: f })));
+    },
+    persona(p) { return this.run(async () => this.start(await this.api('/auth/demo/' + p, { method: 'POST' }))); },
+    async start(d) {
+      this.token = d.token; localStorage.setItem('intrinsic_token', d.token);
+      this.user = d.user; this.tab = 'overview'; this.form = { name: '', email: '', password: '' };
+      await this.loadAll(); this.notify('Welcome, ' + d.user.name + '.');
+    },
+    async logout() {
+      try { await this.api('/auth/logout', { method: 'POST' }); } catch (e) {}
+      this.clear(); this.notify('You have been signed out.');
+    },
+    clear() {
+      this.token = null; this.user = null; this.menu = false; this.mode = 'login'; this.fieldErr = {};
+      this.kpis = {}; this.subs = []; this.invoices = []; this.plans = []; this.discounts = []; this.users = []; this.customers = [];
+      localStorage.removeItem('intrinsic_token');
+    },
+    async loadAll() {
+      const staff = this.user.role !== 'Customer', admin = this.user.role === 'Admin';
+      const [k, s, i, p, d, c, u] = await Promise.all([
+        this.api('/kpis'), this.api('/subscriptions'), this.api('/invoices'), this.api('/plans'),
+        staff ? this.api('/discounts') : [], staff ? this.api('/customers') : [], admin ? this.api('/users') : []]);
+      Object.assign(this, { kpis: k, subs: s, invoices: i, plans: p, discounts: d, customers: c, users: u });
+    },
+    reload() { return this.loadAll().catch(e => this.notify(e.message, 'err')); },
+    fmt(n) { return '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+    count(st) { return this.subs.filter(s => s.status === st).length; },
+    badge(s) {
+      return ({
+        Draft: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100',
+        Quotation: 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200',
+        Confirmed: 'bg-sky-100 text-sky-900 dark:bg-sky-900/50 dark:text-sky-200',
+        Active: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200',
+        Paid: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200',
+        Pending: 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200',
+        Overdue: 'bg-red-100 text-red-900 dark:bg-red-900/50 dark:text-red-200',
+        Closed: 'bg-zinc-300 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-200' })[s] || '';
+    },
+    createSub() {
+      const b = { plan_id: Number(this.newSub.plan_id) || 0, code: this.newSub.code };
+      if (this.user.role !== 'Customer') b.customer_id = Number(this.newSub.customer_id) || null;
+      return this.run(async () => {
+        await this.api('/subscriptions', { method: 'POST', body: b });
+        this.newSub = { customer_id: '', plan_id: '', code: '' }; await this.loadAll(); this.notify('Subscription created as Draft.');
+      });
+    },
+    move(s, to) {
+      return this.run(async () => { await this.api('/subscriptions/' + s.id + '/transition', { method: 'POST', body: { to } }); await this.loadAll(); this.notify('Subscription is now ' + to + '.'); });
+    },
+    pay(i) { return this.run(async () => { await this.api('/invoices/' + i.id + '/pay', { method: 'POST' }); await this.loadAll(); this.notify(i.number + ' marked as paid.'); }); },
+    runBilling() {
+      return this.run(async () => { const r = await this.api('/billing/run', { method: 'POST' }); await this.loadAll(); this.notify(r.created ? r.created + ' invoice(s) generated.' : 'Nothing is due for billing right now.'); });
+    },
+    addPlan() {
+      return this.run(async () => { await this.api('/plans', { method: 'POST', body: { ...this.newPlan, price: Number(this.newPlan.price) } }); this.newPlan = { name: '', price: '', interval: 'monthly' }; await this.loadAll(); this.notify('Plan added.'); });
+    },
+    addDisc() {
+      return this.run(async () => { await this.api('/discounts', { method: 'POST', body: { code: this.newDisc.code, percent: Number(this.newDisc.percent) } }); this.newDisc = { code: '', percent: '' }; await this.loadAll(); this.notify('Discount rule added.'); });
+    },
+    toggleDisc(d) { return this.run(async () => { await this.api('/discounts/' + d.id + '/toggle', { method: 'POST' }); await this.loadAll(); }); },
+    addStaff() {
+      this.staffErr = '';
+      const s = this.staff;
+      if (s.name.trim().length < 2) return this.staffErr = 'Enter the team member’s full name.';
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.email.trim())) return this.staffErr = 'Enter a valid email address.';
+      if (!this.pwValid(s.password)) return this.staffErr = 'Password does not meet all the requirements.';
+      return this.run(async () => {
+        try { await this.api('/users', { method: 'POST', body: s }); } catch (e) { this.staffErr = e.message; throw e; }
+        this.staff = { name: '', email: '', password: '', role: 'Staff' }; this.staffOpen = false;
+        await this.loadAll(); this.notify('Account created.');
+      });
+    }
+  };
+}
+</script>
+</body>
+</html>
